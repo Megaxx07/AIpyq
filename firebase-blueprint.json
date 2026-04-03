@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "user": {
+      "title": "User Profile",
+      "description": "Stores user-specific information and preferences.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique ID of the user." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "enterpriseName": { "type": "string", "description": "The name of the user's enterprise." },
+        "phone": { "type": "string", "description": "The user's phone number." },
+        "role": { "type": "string", "enum": ["admin", "user"], "description": "The user's role." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the profile was created." }
+      },
+      "required": ["uid", "email", "enterpriseName", "phone"]
+    },
+    "poster": {
+      "title": "AI Poster",
+      "description": "Stores AI-generated or uploaded posters for car sharing.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique ID of the poster." },
+        "uid": { "type": "string", "description": "The ID of the user who created the poster." },
+        "imageUrl": { "type": "string", "format": "uri", "description": "The URL of the poster image." },
+        "content": { "type": "string", "description": "The AI-generated text content for the poster." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the poster was created." }
+      },
+      "required": ["id", "uid", "imageUrl", "content", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "user",
+      "description": "Individual user profile documents."
+    },
+    "/posters/{posterId}": {
+      "schema": "poster",
+      "description": "Collection of posters created by users."
+    }
+  }
+}

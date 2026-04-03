@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required) - The unique ID of the user.
+    //   - email: string (required, email format) - The user's email address.
+    //   - enterpriseName: string (required) - The name of the user's enterprise.
+    //   - phone: string (required) - The user's phone number.
+    //   - role: string (optional, enum: ['admin', 'user']) - The user's role.
+    //   - createdAt: string (optional, date-time format) - When the profile was created.
+    //
+    // Collection: posters
+    // Document ID: {posterId}
+    // Fields:
+    //   - id: string (required) - The unique ID of the poster.
+    //   - uid: string (required) - The ID of the user who created the poster.
+    //   - imageUrl: string (required, uri format) - The URL of the poster image.
+    //   - content: string (required) - The AI-generated text content for the poster.
+    //   - createdAt: string (required, date-time format) - When the poster was created.
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:image/.*"));
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() > 0 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.enterpriseName is string && data.enterpriseName.size() > 0 && data.enterpriseName.size() < 100 &&
+             data.phone is string && data.phone.size() > 0 && data.phone.size() < 20;
+    }
+
+    function isValidPoster(data) {
+      return data.id is string && data.id.size() > 0 &&
+             data.uid is string && data.uid == request.auth.uid &&
+             data.imageUrl is string && isValidUrl(data.imageUrl) &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 2000 &&
+             data.createdAt is string && isValidDateString(data.createdAt);
+    }
+
+    // ===============================================================
+    // Match Blocks
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && isValidUser(request.resource.data);
+      allow update: if isOwner(uid) && isValidUser(request.resource.data) && request.resource.data.uid == resource.data.uid;
+    }
+
+    match /posters/{posterId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPoster(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.uid == request.auth.uid && isValidPoster(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+  }
+}
