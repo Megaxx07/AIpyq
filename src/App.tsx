@@ -42,7 +42,9 @@ import {
   AlertCircle,
   Loader2,
   Camera,
-  Upload
+  Upload,
+  Copy,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -62,6 +64,7 @@ interface Poster {
   uid: string;
   imageUrl: string;
   content: string;
+  allOptions?: string[];
   createdAt: string;
 }
 
@@ -112,7 +115,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedPoster, setGeneratedPoster] = useState<Poster | null>(null);
+  const [generatedOptions, setGeneratedOptions] = useState<string[]>([]);
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
+  const [useAIImage, setUseAIImage] = useState(false);
   const [history, setHistory] = useState<Poster[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -240,29 +245,39 @@ export default function App() {
   };
 
   const handleGenerate = async () => {
-    if (!prompt && !selectedImage) {
+    if (!prompt && !selectedImage && !useAIImage) {
       setError('请输入需求或上传图片');
       return;
     }
     setIsGenerating(true);
     setError(null);
+    setGeneratedOptions([]);
+    setSelectedOptionIndex(null);
+    
     try {
       let imageUrl = selectedImage;
-      if (!imageUrl) {
+      
+      // 1. Generate AI Image if requested and no image uploaded
+      if (useAIImage && !selectedImage && prompt) {
         imageUrl = await generateCarImage(prompt);
+        setSelectedImage(imageUrl);
       }
       
-      const content = await generateCarPoster(prompt, imageUrl || undefined);
+      // 2. Generate Copywriting Options
+      const result = await generateCarPoster(prompt, imageUrl || undefined) as { options: string[] };
+      setGeneratedOptions(result.options);
+      setSelectedOptionIndex(0); // Default to first option
       
-      if (imageUrl && content && user) {
+      // 3. Save to History
+      if (imageUrl && result.options.length > 0 && user) {
         const posterData = {
           uid: user.uid,
           imageUrl,
-          content,
+          content: result.options[0], // Save first option as primary content
+          allOptions: result.options,
           createdAt: new Date().toISOString()
         };
-        const docRef = await addDoc(collection(db, 'posters'), posterData);
-        setGeneratedPoster({ id: docRef.id, ...posterData });
+        await addDoc(collection(db, 'posters'), posterData);
         setActiveTab('generate');
       }
     } catch (err: any) {
@@ -271,6 +286,15 @@ export default function App() {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  const copyAll = () => {
+    const allText = generatedOptions.join('\n\n---\n\n');
+    copyToClipboard(allText);
   };
 
   // --- Render Helpers ---
@@ -504,40 +528,81 @@ export default function App() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">上传实拍图 (可选)</label>
-                <div 
-                  onClick={() => fileInputRef.current?.click()}
-                  className={cn(
-                    "border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-all",
-                    selectedImage ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:border-blue-400 hover:bg-slate-50"
-                  )}
-                >
-                  <input 
-                    type="file" 
-                    ref={fileInputRef}
-                    onChange={handleImageUpload}
-                    accept="image/*"
-                    className="hidden"
-                  />
-                  {selectedImage ? (
-                    <div className="relative w-full aspect-video rounded-lg overflow-hidden">
-                      <img src={selectedImage} alt="Preview" className="w-full h-full object-cover" />
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setSelectedImage(null); }}
-                        className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70"
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <Upload className="w-8 h-8 text-slate-400 mb-2" />
-                      <span className="text-sm text-slate-500">点击上传或拖拽图片</span>
-                      <span className="text-xs text-slate-400 mt-1">AI将根据图片生成更精准的文案</span>
-                    </>
-                  )}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-slate-700">配图方式</label>
+                  <div className="flex bg-slate-100 p-1 rounded-lg">
+                    <button 
+                      onClick={() => { setUseAIImage(false); setSelectedImage(null); }}
+                      className={cn(
+                        "px-3 py-1 text-xs rounded-md transition-all",
+                        !useAIImage ? "bg-white shadow-sm text-blue-600" : "text-slate-500"
+                      )}
+                    >
+                      上传实拍
+                    </button>
+                    <button 
+                      onClick={() => setUseAIImage(true)}
+                      className={cn(
+                        "px-3 py-1 text-xs rounded-md transition-all",
+                        useAIImage ? "bg-white shadow-sm text-blue-600" : "text-slate-500"
+                      )}
+                    >
+                      AI 生成
+                    </button>
+                  </div>
                 </div>
+
+                {!useAIImage ? (
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className={cn(
+                      "border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-all",
+                      selectedImage ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:border-blue-400 hover:bg-slate-50"
+                    )}
+                  >
+                    <input 
+                      type="file" 
+                      ref={fileInputRef}
+                      onChange={handleImageUpload}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                    {selectedImage ? (
+                      <div className="relative w-full aspect-video rounded-lg overflow-hidden">
+                        <img src={selectedImage} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setSelectedImage(null); }}
+                          className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <Upload className="w-8 h-8 text-slate-400 mb-2" />
+                        <span className="text-sm text-slate-500">点击上传或拖拽图片</span>
+                        <span className="text-xs text-slate-400 mt-1">AI将根据图片生成更精准的文案</span>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 flex flex-col items-center text-center gap-3">
+                    {selectedImage && useAIImage ? (
+                      <div className="relative w-full aspect-square max-w-[160px] rounded-lg overflow-hidden shadow-md">
+                        <img src={selectedImage} alt="AI Generated" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      </div>
+                    ) : (
+                      <div className="bg-white p-3 rounded-full shadow-sm">
+                        <Sparkles className="w-6 h-6 text-blue-500" />
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">AI 创意图片生成</p>
+                      <p className="text-xs text-slate-500 mt-1">我们将根据您的描述，为您生成一张极具质感的汽车大片</p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <button 
@@ -604,37 +669,81 @@ export default function App() {
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="space-y-6"
               >
-                {generatedPoster ? (
-                  <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200">
-                    <div className="aspect-square bg-slate-100 relative">
-                      <img src={generatedPoster.imageUrl} alt="Generated" className="w-full h-full object-cover" />
-                    </div>
-                    <div className="p-6">
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden">
-                          <UserIcon className="w-6 h-6 text-slate-400" />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900">{profile?.enterpriseName}</p>
-                          <p className="text-xs text-slate-500">刚刚</p>
-                        </div>
-                      </div>
-                      <div className="prose prose-slate max-w-none mb-6">
-                        <ReactMarkdown>{generatedPoster.content}</ReactMarkdown>
-                      </div>
-                      <div className="flex gap-3">
+                {generatedOptions.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-6">
+                    {/* Copywriting Options */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                      <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
+                        <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-blue-500" />
+                          AI 生成方案
+                        </h3>
                         <button 
-                          onClick={() => {
-                            navigator.clipboard.writeText(generatedPoster.content);
-                            alert('文案已复制！');
-                          }}
-                          className="flex-1 bg-slate-900 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all"
+                          onClick={copyAll}
+                          className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
                         >
-                          <Share2 className="w-4 h-4" />
-                          复制文案并分享
+                          <Copy className="w-3 h-3" />
+                          复制全部方案
+                        </button>
+                      </div>
+                      
+                      <div className="p-4 space-y-4">
+                        {generatedOptions.map((option, idx) => (
+                          <div 
+                            key={idx}
+                            onClick={() => setSelectedOptionIndex(idx)}
+                            className={cn(
+                              "p-4 rounded-xl border-2 transition-all cursor-pointer relative group",
+                              selectedOptionIndex === idx 
+                                ? "border-blue-500 bg-blue-50/30" 
+                                : "border-slate-100 hover:border-slate-200 bg-white"
+                            )}
+                          >
+                            <div className="flex items-start justify-between mb-2">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                方案 {idx + 1}
+                              </span>
+                              {selectedOptionIndex === idx && (
+                                <CheckCircle2 className="w-4 h-4 text-blue-500" />
+                              )}
+                            </div>
+                            <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                              {option}
+                            </div>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyToClipboard(option);
+                              }}
+                              className="absolute bottom-2 right-2 p-2 bg-white shadow-sm border border-slate-100 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-50"
+                            >
+                              <Copy className="w-3 h-3 text-slate-500" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="p-4 bg-slate-50 border-t border-slate-200 flex gap-3">
+                        <button 
+                          disabled={selectedOptionIndex === null}
+                          onClick={() => selectedOptionIndex !== null && copyToClipboard(generatedOptions[selectedOptionIndex])}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-sm"
+                        >
+                          <Copy className="w-4 h-4" />
+                          复制选中方案
                         </button>
                       </div>
                     </div>
+
+                    {/* Image Preview */}
+                    {selectedImage && (
+                      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">预览效果</h4>
+                        <div className="relative aspect-square rounded-xl overflow-hidden shadow-inner bg-slate-100">
+                          <img src={selectedImage} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-12 flex flex-col items-center justify-center text-center">
@@ -663,7 +772,9 @@ export default function App() {
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                         <button 
                           onClick={() => {
-                            setGeneratedPoster(item);
+                            setGeneratedOptions(item.allOptions || [item.content]);
+                            setSelectedImage(item.imageUrl);
+                            setSelectedOptionIndex(0);
                             setActiveTab('generate');
                           }}
                           className="bg-white text-slate-900 px-4 py-2 rounded-lg font-bold text-sm"

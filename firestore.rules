@@ -21,7 +21,8 @@ service cloud.firestore {
     //   - id: string (required) - The unique ID of the poster.
     //   - uid: string (required) - The ID of the user who created the poster.
     //   - imageUrl: string (required, uri format) - The URL of the poster image.
-    //   - content: string (required) - The AI-generated text content for the poster.
+    //   - content: string (required) - The primary AI-generated text content for the poster.
+    //   - allOptions: list (optional) - All 3 AI-generated copywriting options.
     //   - createdAt: string (required, date-time format) - When the poster was created.
     //
     // ===============================================================
@@ -66,10 +67,10 @@ service cloud.firestore {
     }
 
     function isValidPoster(data) {
-      return data.id is string && data.id.size() > 0 &&
-             data.uid is string && data.uid == request.auth.uid &&
+      return data.uid is string && data.uid == request.auth.uid &&
              data.imageUrl is string && isValidUrl(data.imageUrl) &&
              data.content is string && data.content.size() > 0 && data.content.size() < 2000 &&
+             (!('allOptions' in data) || (data.allOptions is list && data.allOptions.size() <= 3)) &&
              data.createdAt is string && isValidDateString(data.createdAt);
     }
 
